@@ -38,6 +38,16 @@
 
 #define PROGRAM_VERSION "1.0.6"
 
+struct Options
+{
+    bool cpu_info{false};
+    bool core_info{false};
+    bool electrical_thermal{false};
+    bool memory{false};
+    bool gfx{false};
+    bool power{false};
+};
+
 smu_obj_t obj;
 static int update_time_s = 1;
 static int show_disabled_cores = 0;
@@ -60,45 +70,47 @@ void print_line(const char* label, const char* value_format, ...) {
 //Same, but with 0 as return. For summations that should not fail if one value is not present.
 #define pmta0(elem) ((pmt->elem)?(*pmt->elem):0)
 
-void draw_screen(pm_table *pmt, system_info *sysinfo) {
-    //general
-    int i, j;
-    //core block
+void cpu_info(pm_table *pmt, system_info *sysinfo)
+{
+    fprintf(stdout, "╭───────────────────────────────────────────────┬────────────────────────────────────────────────╮\n");
+    print_line("CPU Model", sysinfo->cpu_name);
+    print_line("Processor Code Name", sysinfo->codename);
+    print_line("Cores", "%d", sysinfo->cores);
+    print_line("Core CCDs", "%d", sysinfo->ccds);
+    if (pmt->zen_version!=3) {
+        print_line("Core CCXs", "%d", sysinfo->ccxs);
+        print_line("Cores Per CCX", "%d", sysinfo->cores_per_ccx);
+    }
+    else
+        print_line("Cores Per CCD", "%d", sysinfo->cores_per_ccx); //Zen3 does not have CCXs anymore
+    print_line("SMU FW Version", "v%s", sysinfo->smu_fw_ver);
+    print_line("MP1 IF Version", "v%d", sysinfo->if_ver);
+    fprintf(stdout, "╰───────────────────────────────────────────────┴────────────────────────────────────────────────╯\n");
+}
+
+void calculate_fields(pm_table *pmt, system_info *sysinfo, float& total_core_power, float& total_usage)
+{
+    total_core_power = total_usage = 0;
+
+    for (int i = 0; i < pmt->max_cores; i++)
+    {
+        bool core_disabled = (sysinfo->core_disable_map >> i) & 1;
+        if (!core_disabled)
+        {
+            total_core_power += pmta(CORE_POWER[i]);
+            total_usage += pmta(CORE_C0[i]);
+        }
+    }
+}
+
+void core_info(pm_table *pmt, system_info *sysinfo)
+{
     float core_voltage, core_frequency, package_sleep_time, core_sleep_time, average_voltage;
     float peak_core_frequency, peak_core_temp, peak_core_voltage;
-    float total_core_voltage, total_core_power, total_usage, total_core_CC6;
-    int core_disabled, core_number;
-    //constraints block
-    float edc_value;
-    //power block
-    float l3_logic_power, l3_vddm_power;
-    char strbuf[100];
-
-    if (pmt->experimental) {
-        fprintf(stdout, "Warning: Support for this PM table version is expermiental. Can't trust anything.\n");
-    }
-
-    if (sysinfo->available) {
-        fprintf(stdout, "╭───────────────────────────────────────────────┬────────────────────────────────────────────────╮\n");
-        print_line("CPU Model", sysinfo->cpu_name);
-        print_line("Processor Code Name", sysinfo->codename);
-        print_line("Cores", "%d", sysinfo->cores);
-        print_line("Core CCDs", "%d", sysinfo->ccds);
-        if (pmt->zen_version!=3) {
-            print_line("Core CCXs", "%d", sysinfo->ccxs);
-            print_line("Cores Per CCX", "%d", sysinfo->cores_per_ccx);
-        }
-        else
-            print_line("Cores Per CCD", "%d", sysinfo->cores_per_ccx); //Zen3 does not have CCXs anymore
-        print_line("SMU FW Version", "v%s", sysinfo->smu_fw_ver);
-        print_line("MP1 IF Version", "v%d", sysinfo->if_ver);
-        fprintf(stdout, "╰───────────────────────────────────────────────┴────────────────────────────────────────────────╯\n");
-    }
-
+    float total_core_voltage{0}, total_core_CC6{0}, total_core_power{0};
+    int core_disabled, core_number{0};
 
     peak_core_frequency = peak_core_temp = peak_core_voltage = 0;
-    total_core_voltage = total_core_power = total_usage = total_core_CC6 = 0;
-    core_number = 0;
 
     if(pmt->PC6)
     {
@@ -111,38 +123,38 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
     }
 
     fprintf(stdout, "╭─────────┬────────────┬──────────┬─────────┬──────────┬─────────────┬─────────────┬─────────────╮\n");
-    for (i = 0; i < pmt->max_cores; i++) {
+    for (int i = 0; i < pmt->max_cores; i++) {
         core_disabled = (sysinfo->core_disable_map >> i)&0x01;
         core_frequency = pmta(CORE_FREQEFF[i]) * 1000.f;
 
         core_voltage = pmta(CORE_VOLTAGE[i]); // True core voltage
         // Rumours say this is how AMD calculates core voltage
         //if (pmta(CORE_FREQ[i]) != 0.f) {
-            core_sleep_time = pmta(CORE_CC6[i]) / 100.f;
-            core_voltage = ((1.0 - core_sleep_time) * average_voltage) + (0.2 * core_sleep_time);
+        core_sleep_time = pmta(CORE_CC6[i]) / 100.f;
+        core_voltage = ((1.0 - core_sleep_time) * average_voltage) + (0.2 * core_sleep_time);
         //}
 
         if (core_disabled) {
             if (show_disabled_cores)
-                    fprintf(stdout,
+                fprintf(stdout,
                         "│ %*s %d │   Disabled | %6.3f W | %5.3f V | %6.2f C | C0: %5.1f %% | C1: %5.1f %% | C6: %5.1f %% │\n",
-                    (core_number<10)+4, "Core", core_number, //Print "Core" and its number but right-justified
+                        (core_number<10)+4, "Core", core_number, //Print "Core" and its number but right-justified
                         pmta(CORE_POWER[i]), core_voltage, pmta(CORE_TEMP[i]),
                         pmta(CORE_C0[i]), pmta(CORE_CC1[i]), pmta(CORE_CC6[i]));
         }
         else if (pmta(CORE_C0[i]) >= 6.f) {
             // AMD denotes a sleeping core as having spent less than 6% of the time in C0.
             // Source: Ryzen Master
-                fprintf(stdout,
+            fprintf(stdout,
                     "│ %*s %d │   %4.f MHz | %6.3f W | %5.3f V | %6.2f C | C0: %5.1f %% | C1: %5.1f %% | C6: %5.1f %% │\n",
-                (core_number<10)+4, "Core", core_number, //Print "Core" and its number but right-justified
-                core_frequency, pmta(CORE_POWER[i]), core_voltage, pmta(CORE_TEMP[i]),
+                    (core_number<10)+4, "Core", core_number, //Print "Core" and its number but right-justified
+                    core_frequency, pmta(CORE_POWER[i]), core_voltage, pmta(CORE_TEMP[i]),
                     pmta(CORE_C0[i]), pmta(CORE_CC1[i]), pmta(CORE_CC6[i]));
-            }
-            else {
-                fprintf(stdout,
+        }
+        else {
+            fprintf(stdout,
                     "│ %*s %d │   Sleeping | %6.3f W | %5.3f V | %6.2f C | C0: %5.1f %% | C1: %5.1f %% | C6: %5.1f %% │\n",
-                (core_number<10)+4, "Core", core_number, //Print "Core" and its number but right-justified
+                    (core_number<10)+4, "Core", core_number, //Print "Core" and its number but right-justified
                     pmta(CORE_POWER[i]), core_voltage, pmta(CORE_TEMP[i]),
                     pmta(CORE_C0[i]), pmta(CORE_CC1[i]), pmta(CORE_CC6[i]));
         }
@@ -158,7 +170,6 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
             if (peak_core_voltage < core_voltage) peak_core_voltage = core_voltage;
             total_core_voltage += core_voltage;
             total_core_power += pmta(CORE_POWER[i]);
-            total_usage += pmta(CORE_C0[i]);
             total_core_CC6 += pmta(CORE_CC6[i]);
         }
     }
@@ -178,6 +189,12 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
     print_line("Peak Core Voltage", "%5.3f V", pmta(CPU_TELEMETRY_VOLTAGE));
     if(pmt->PC6) print_line("Package CC6", "%6.2f %%", pmta(PC6));
     fprintf(stdout, "╰───────────────────────────────────────────────┴────────────────────────────────────────────────╯\n");
+
+}
+
+void electrical_thermal_constaints(pm_table *pmt, system_info *sysinfo, float total_usage)
+{
+    float edc_value;
 
     fprintf(stdout, "╭── Electrical & Thermal Constraints ───────────┬────────────────────────────────────────────────╮\n");
     edc_value = pmta(EDC_VALUE) * (total_usage / sysinfo->cores / 100);
@@ -205,6 +222,10 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
     print_line("FIT", "%7.f   | %7.f   | %8.2f %%", pmta(FIT_VALUE), pmta(FIT_LIMIT), (pmta(FIT_VALUE) / pmta(FIT_LIMIT)) * 100.f);
     fprintf(stdout, "╰───────────────────────────────────────────────┴────────────────────────────────────────────────╯\n");
 
+}
+
+void memory_interface(pm_table *pmt, system_info *sysinfo)
+{
     fprintf(stdout, "╭── Memory Interface ───────────────────────────┬────────────────────────────────────────────────╮\n");
     print_line("Coupled Mode", "%8s", pmta(UCLK_FREQ) == pmta(MEMCLK_FREQ) ? "ON" : "OFF");
     print_line("Fabric Clock (Average)", "%5.f MHz", pmta(FCLK_FREQ_EFF));
@@ -220,7 +241,10 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
     if(pmt->V_VDDG_CCD) print_line("cLDO_VDDG_CCD", "%7.4f V", pmta(V_VDDG_CCD));
     fprintf(stdout, "╰───────────────────────────────────────────────┴────────────────────────────────────────────────╯\n");
 
-    if(pmt->has_graphics){
+}
+
+void gfx_info(pm_table *pmt, system_info *sysinfo)
+{
     fprintf(stdout, "╭── Graphics Subsystem──────────────────────────┬────────────────────────────────────────────────╮\n");
     print_line("GFX Voltage | ROC Power", "%7.4f V | %8.3f W", pmta(GFX_VOLTAGE), pmta(ROC_POWER));
     print_line("GFX Temperature", "%8.2f C", pmta(GFX_TEMP));
@@ -230,14 +254,23 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
     print_line("Display Count | FPS", "%2.f | %8.2f  ", pmta(DISPLAY_COUNT), pmta(FPS));
     print_line("DGPU Power | Freq Target | Busy", "%7.3f W | %5.f MHz | %8.2f %%", pmta(DGPU_POWER), pmta(DGPU_FREQ_TARGET), pmta(DGPU_GFX_BUSY) * 100.f);
     fprintf(stdout, "╰───────────────────────────────────────────────┴────────────────────────────────────────────────╯\n");
-    }
+
+}
+
+void power_consumption(pm_table *pmt, system_info *sysinfo, float total_core_power)
+{
+    //constraints block
+
+    //power block
+    float l3_logic_power, l3_vddm_power;
+    char strbuf[100];
 
     fprintf(stdout, "╭── Power Consumption ──────────────────────────┬────────────────────────────────────────────────╮\n");
     //These powers are drawn via VDDCR_SOC and VDDCR_CPU and thus are pulled from the CPU power connector of the mainboard
     print_line("Total Core Power Sum", "%7.3f W", total_core_power);
     //print_line("VDDCR_CPU Power", "%7.3f W", pmta(VDDCR_CPU_POWER)); //This value doesn't correlate with what the cores
-                                                                        //report, nor with what is actually consumed. but is
-                                                                        //the value HWiNFO shows.
+    //report, nor with what is actually consumed. but is
+    //the value HWiNFO shows.
     print_line("VDDCR_SOC Power", "%7.3f W", pmta(VDDCR_SOC_POWER));
     if(pmt->IO_VDDCR_SOC_POWER) print_line("IO VDDCR_SOC Power", "%7.3f W", pmta(IO_VDDCR_SOC_POWER));
     if(pmt->GMI2_VDDG_POWER) print_line("GMI2_VDDG Power", "%7.3f W", pmta(GMI2_VDDG_POWER));
@@ -246,7 +279,8 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
     //L3 caches (2 per CCD on Zen2, 1 per CCD on Zen3)
     l3_logic_power=0;
     l3_vddm_power=0;
-    for (i=0; i<pmt->max_l3; i++) {
+    for (int i = 0; i < pmt->max_l3; i++)
+    {
         l3_logic_power += pmta0(L3_LOGIC_POWER[i]);
         l3_vddm_power += pmta0(L3_VDDM_POWER[i]);
     }
@@ -254,9 +288,10 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
         print_line("L3 Logic Power", "%7.3f W", pmta(L3_LOGIC_POWER[0]));
         print_line("L3 VDDM Power", "%7.3f W", pmta(L3_VDDM_POWER[0]));
     } else {
-        for (i=0; i<pmt->max_l3; i+=2) {
+        for (int i = 0; i < pmt->max_l3; i+=2)
+        {
             // + sign if needed and first value
-            j = snprintf(strbuf, sizeof(strbuf), "%s%7.3f W", (i?"+ ":""), pmta(L3_LOGIC_POWER[i]));
+            int j = snprintf(strbuf, sizeof(strbuf), "%s%7.3f W", (i?"+ ":""), pmta(L3_LOGIC_POWER[i]));
             // second value if it exists
             if (pmt->max_l3-i > 1) j += snprintf(strbuf+j, sizeof(strbuf)-j, " + %7.3f W", pmta(L3_LOGIC_POWER[i+1]));
             // end of string (sum or nothing)
@@ -265,9 +300,10 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
             // print
             print_line((i?"":"L3 Logic Power"), "%s", strbuf);
         }
-        for (i=0; i<pmt->max_l3; i+=2) {
+        for (int i = 0; i < pmt->max_l3; i+=2)
+        {
             // + sign if needed and first value
-            j = snprintf(strbuf, sizeof(strbuf), "%s%7.3f W", (i?"+ ":""), pmta(L3_VDDM_POWER[i]));
+            int j = snprintf(strbuf, sizeof(strbuf), "%s%7.3f W", (i?"+ ":""), pmta(L3_VDDM_POWER[i]));
             // second value if it exists
             if (pmt->max_l3-i > 1) j += snprintf(strbuf+j, sizeof(strbuf)-j, " + %7.3f W", pmta(L3_VDDM_POWER[i+1]));
             // end of string (sum or nothing)
@@ -289,12 +325,12 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
     if(pmt->IO_USB_POWER) print_line("CPU USB IO Power", "%7.3f W", pmta(IO_USB_POWER));
 
     if(!pmt->powersum_unclear) {
-    //The sum is the thermal output of the whole package. Yes, this is higher than PPT and SOCKET_POWER.
-    //Confirmed by measuring the actual current draw on the mainboard.
-    print_line("","");
-    print_line("Calculated Thermal Output", "%7.3f W", total_core_power + pmta0(VDDCR_SOC_POWER) + pmta0(GMI2_VDDG_POWER) 
-            + l3_logic_power + l3_vddm_power
-            + pmta0(VDDIO_MEM_POWER) + pmta0(IOD_VDDIO_MEM_POWER) + pmta0(DDR_VDDP_POWER) + pmta0(VDD18_POWER));
+        //The sum is the thermal output of the whole package. Yes, this is higher than PPT and SOCKET_POWER.
+        //Confirmed by measuring the actual current draw on the mainboard.
+        print_line("","");
+        print_line("Calculated Thermal Output", "%7.3f W", total_core_power + pmta0(VDDCR_SOC_POWER) + pmta0(GMI2_VDDG_POWER)
+                                                               + l3_logic_power + l3_vddm_power
+                                                               + pmta0(VDDIO_MEM_POWER) + pmta0(IOD_VDDIO_MEM_POWER) + pmta0(DDR_VDDP_POWER) + pmta0(VDD18_POWER));
     }
 
     fprintf(stdout, "├── Additional Reports ─────────────────────────┼────────────────────────────────────────────────┤\n");
@@ -305,6 +341,49 @@ void draw_screen(pm_table *pmt, system_info *sysinfo) {
     print_line("Socket Power (SMU)", "%7.3f W", pmta(SOCKET_POWER));
     if (pmt->PACKAGE_POWER) print_line("Package Power (SMU)", "%7.3f W", pmta(PACKAGE_POWER));
     fprintf(stdout, "╰───────────────────────────────────────────────┴────────────────────────────────────────────────╯\n");
+}
+
+void draw_screen(pm_table *pmt, system_info *sysinfo, const Options& options)
+{
+    float total_core_power, total_usage;
+
+    if (pmt->experimental)
+    {
+        fprintf(stdout, "Warning: Support for this PM table version is expermiental. Can't trust anything.\n");
+    }
+
+    if (sysinfo->available && options.cpu_info)
+    {
+        cpu_info(pmt, sysinfo);
+    }
+
+    calculate_fields(pmt, sysinfo, total_core_power, total_usage);
+
+    if (options.core_info)
+    {
+        core_info(pmt, sysinfo);
+    }
+
+    if (options.electrical_thermal)
+    {
+        electrical_thermal_constaints(pmt, sysinfo, total_usage);
+    }
+
+    if (options.memory)
+    {
+        memory_interface(pmt, sysinfo);
+    }
+
+    if (pmt->has_graphics && options.gfx)
+    {
+        gfx_info(pmt, sysinfo);
+    }
+
+    if (options.power)
+    {
+        power_consumption(pmt, sysinfo, total_core_power);
+    }
+
 }
 
 int select_pm_table_version(unsigned int version, pm_table *pmt, unsigned char *pm_buf) {
@@ -349,7 +428,8 @@ void disabled_cores_0x400005(pm_table *pmt, system_info *sysinfo) {
     }
 }
 
-void start_pm_monitor(unsigned int force) {
+void start_pm_monitor(unsigned int force, const Options& options)
+{
     unsigned char *pm_buf;
     pm_table pmt;
     system_info sysinfo;
@@ -411,7 +491,7 @@ void start_pm_monitor(unsigned int force) {
             continue;
 
         fprintf(stdout, "\e[1;1H\e[2J"); //Move cursor to (1,1); Clear entire screen
-        draw_screen(&pmt, &sysinfo);
+        draw_screen(&pmt, &sysinfo, options);
         fprintf(stdout, "\e[?25l"); // Hide Cursor
         fflush(stdout);
 
@@ -419,7 +499,7 @@ void start_pm_monitor(unsigned int force) {
     }
 }
 
-void read_from_dumpfile(char *dumpfile, unsigned int version) {
+void read_from_dumpfile(char *dumpfile, unsigned int version, const Options& options) {
     unsigned char readbuf[10240];
     unsigned int bytes_read;
     pm_table pmt;
@@ -458,7 +538,7 @@ void read_from_dumpfile(char *dumpfile, unsigned int version) {
     sysinfo.core_disable_map=0;
     sysinfo.cores=sysinfo.enabled_cores_count;
 
-    draw_screen(&pmt, &sysinfo);
+    draw_screen(&pmt, &sysinfo, options);
 }
 
 void print_version() {
@@ -479,7 +559,13 @@ void show_help(char* program) {
             "\t-d            - Show disabled cores.\n"
             "\t-u<seconds>   - Update the monitoring only after this number of second(s) have passed. Defaults to 1.\n"
             "\t-f<hex-value> - Force to use a specific PM table version.\n"
-            "\t-t<filename>  - Test mode. Read PM Table from raw-dumfile. Use in conjunction with -f\n",
+            "\t-t<filename>  - Test mode. Read PM Table from raw-dumfile. Use in conjunction with -f\n"
+            "\t-i            - Show CPU information.\n"
+            "\t-c            - Show core statistics (calculated).\n"
+            "\t-e            - Show electrical and thermal constraints.\n"
+            "\t-r            - Show memory interface information.\n"
+            "\t-p            - Show power consumption.\n"
+            "\t-g            - Show GPU related information.\n",
         program
     );
 }
@@ -510,8 +596,10 @@ int main(int argc, char** argv) {
         exit(-1);
     }
 
+    Options options;
+
     //Parse arguments
-    while ((c = getopt(argc, argv, "vmd::f:t:u:h")) != -1) {
+    while ((c = getopt(argc, argv, "vmdicerpg::f:t:u:h")) != -1) {
         switch (c) {
             case 'v':
                 print_version();
@@ -546,13 +634,31 @@ int main(int argc, char** argv) {
                 exit(0);
             case '?':
                 exit(0);
+            case 'i':
+                options.cpu_info = true;
+                break;
+            case 'c':
+                options.core_info = true;
+                break;
+            case 'e':
+                options.electrical_thermal = true;
+                break;
+            case 'r':
+                options.memory = true;
+                break;
+            case 'g':
+                options.gfx = true;
+                break;
+            case 'p':
+                options.power = true;
+                break;
             default:
                 break;
         }
     }
 
     if(dumpfile && !printtimings)
-        read_from_dumpfile(dumpfile, force);
+        read_from_dumpfile(dumpfile, force, options);
     else
     {
         if (getuid() != 0 && geteuid() != 0) {
@@ -567,7 +673,7 @@ int main(int argc, char** argv) {
         }
 
         if(printtimings) print_memory_timings();
-        else start_pm_monitor(force);
+        else start_pm_monitor(force, options);
     }
 
     return 0;
