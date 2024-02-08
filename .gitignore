@@ -53,3 +53,5 @@ dkms.conf
 
 # Compiler output
 src/ryzen_monitor
+build/
+CMakeLists.txt.user

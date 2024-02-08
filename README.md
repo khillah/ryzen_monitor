@@ -33,7 +33,9 @@ Then pull and make **ryzen_monitor**:
 ```bash
 git clone https://github.com/hattedsquirrel/ryzen_monitor.git
 cd ryzen_monitor/
-make
+mkdir build && pushd build
+make -j
+popd
 
 sudo ./src/ryzen_monitor
 ```

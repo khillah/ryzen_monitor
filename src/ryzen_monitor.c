@@ -33,9 +33,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <libsmu.h>
+#include <libsmu/libsmu.h>
+#include <pm_tables/pm_tables.h>
+
 #include "readinfo.h"
-#include "pm_tables.h"
 
 #define PROGRAM_VERSION "1.0.6"
 

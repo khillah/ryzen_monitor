@@ -21,7 +21,7 @@
  * This file contains the mapping of every known PM Table version
  **/
 
-#include "pm_tables.h"
+#include <pm_tables.h>
 
 //Calculate memory address of element
 #define pm_element(i) ((float*) (base_addr + (i)*4))
