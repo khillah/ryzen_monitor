@@ -23,8 +23,8 @@
 #include <stdio.h>
 #include <cpuid.h>
 #include <ctype.h>
-#include <libsmu/libsmu.h>
-#include "readinfo.h"
+#include <libsmu/libsmu.hpp>
+#include "readinfo.hpp"
 
 extern smu_obj_t obj;
 

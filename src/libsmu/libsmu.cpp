@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 
-#include "libsmu.h"
+#include "libsmu.hpp"
 
 #define DRIVER_CLASS_PATH               "/sys/kernel/ryzen_smu_drv/"
 
@@ -129,7 +129,7 @@ smu_return_val smu_init_parse(smu_obj_t* obj) {
     if (ret < 0)
         return SMU_Return_RWError;
 
-    obj->codename = atoi(rd_buf);
+    obj->codename = static_cast<smu_processor_codename>(atoi(rd_buf));
 
     if (obj->codename <= CODENAME_UNDEFINED ||
         obj->codename >= CODENAME_COUNT)
@@ -173,8 +173,9 @@ smu_return_val smu_init_parse(smu_obj_t* obj) {
     return SMU_Return_OK;
 }
 
-int smu_init(smu_obj_t* obj) {
-    int i, ret;
+smu_return_val smu_init(smu_obj_t* obj) {
+    int i;
+    smu_return_val ret;
 
     memset(obj, 0, sizeof(*obj));
 
@@ -340,7 +341,7 @@ smu_return_val smu_send_command(smu_obj_t* obj, unsigned int op, smu_arg_t args,
 BREAK_OUT:
     pthread_mutex_unlock(&obj->lock[SMU_MUTEX_CMD]);
 
-    return ret;
+    return static_cast<smu_return_val>(ret);
 }
 
 smu_return_val smu_read_pm_table(smu_obj_t* obj, unsigned char* dst, size_t dst_len) {
@@ -361,7 +362,7 @@ smu_return_val smu_read_pm_table(smu_obj_t* obj, unsigned char* dst, size_t dst_
 
     pthread_mutex_unlock(&obj->lock[SMU_MUTEX_PM]);
 
-    return ret;
+    return static_cast<smu_return_val>(ret);
 }
 
 const char* smu_return_to_str(smu_return_val val) {

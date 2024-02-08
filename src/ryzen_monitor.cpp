@@ -19,8 +19,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  **/
 
-#define _GNU_SOURCE
-
 #include <math.h>
 #include <sched.h>
 #include <fcntl.h>
@@ -33,10 +31,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <libsmu/libsmu.h>
+#include <libsmu/libsmu.hpp>
 #include <pm_tables/pm_tables.h>
 
-#include "readinfo.h"
+#include "readinfo.hpp"
 
 #define PROGRAM_VERSION "1.0.6"
 
@@ -314,18 +312,7 @@ int select_pm_table_version(unsigned int version, pm_table *pmt, unsigned char *
     //Access via pmta(...) will check if pointer is 0 before trying to access the value.
     memset(pmt, 0, sizeof(pm_table));
 
-     //Select matching PM Table
-    switch(version) {
-        case 0x380904: pm_table_0x380904(pmt, pm_buf); break; //Ryzen 5600X
-        case 0x380905: pm_table_0x380905(pmt, pm_buf); break; //Ryzen 5600X
-        case 0x380804: pm_table_0x380804(pmt, pm_buf); break; //Ryzen 5900X / 5950X
-        case 0x380805: pm_table_0x380805(pmt, pm_buf); break; //Ryzen 5900X / 5950X
-        case 0x400005: pm_table_0x400005(pmt, pm_buf); break; //Ryzen 5700G
-        case 0x240903: pm_table_0x240903(pmt, pm_buf); break; //Ryzen 3700X / 3800X
-        case 0x240803: pm_table_0x240803(pmt, pm_buf); break; //Ryzen 3950X
-        default:
-            return 0;
-    }
+    get_table(pmt, pm_buf, version);
 
     //Avoid access bejond bounds of the defined arrays.
     if (pmt->max_l3 > PMT_MAX_NUM_L3) pmt->max_l3 = PMT_MAX_NUM_L3;
@@ -372,7 +359,7 @@ void start_pm_monitor(unsigned int force) {
         exit(0);
     }
 
-    pm_buf = calloc(obj.pm_table_size, sizeof(unsigned char));
+    pm_buf = static_cast<unsigned char *>(calloc(obj.pm_table_size, sizeof(unsigned char)));
     if (!pm_buf) {
         fprintf(stderr, "Could not allocate memory for the PM Table.\n");
         exit(0);

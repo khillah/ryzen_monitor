@@ -17,8 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  **/
 
-#ifndef pm_tables_h
-#define pm_tables_h
+#pragma once
 
 #define PMT_MAX_NUM_L3      4
 #define PMT_MAX_NUM_CORES   16
@@ -367,12 +366,5 @@ typedef struct {
     float *SMU_SKIP_COUNTER;
 } pm_table;
 
-void pm_table_0x380904(pm_table *pmt, void* base_addr); //5900X: Zen3, 16 cores, version 4
-void pm_table_0x380905(pm_table *pmt, void* base_addr); //5900X: Zen3, 16 cores, version 5
-void pm_table_0x380804(pm_table *pmt, void* base_addr); //5600X: Zen3,  8 cores, version 4
-void pm_table_0x380805(pm_table *pmt, void* base_addr); //5600X: Zen3,  8 cores, version 5
-void pm_table_0x400005(pm_table *pmt, void* base_addr); //5700G: Zen3,  8 cores, GPU, version 5
-void pm_table_0x240903(pm_table *pmt, void* base_addr); //3700X: Zen2,  8 cores, version 3
-void pm_table_0x240803(pm_table *pmt, void* base_addr); //3950X: Zen2, 16 cores, version 3
+void get_table(pm_table *pmt, unsigned char* base_addr, unsigned int version);
 
-#endif

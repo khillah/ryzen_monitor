@@ -35,7 +35,8 @@ static char kernel_driver_supported_versions[KERNEL_DRIVER_SUPP_VERS_COUNT][10] 
 /**
  * SMU Mailbox Target
  */
-enum smu_mailbox {
+enum smu_mailbox
+{
     TYPE_RSMU,
     TYPE_MP1,
 };
@@ -43,7 +44,8 @@ enum smu_mailbox {
 /**
  * Return values that can be sent from the SMU in response to a command.
  */
-typedef enum {
+enum smu_return_val
+{
     SMU_Return_OK                = 0x01,
     SMU_Return_Failed            = 0xFF,
     SMU_Return_UnknownCmd        = 0xFE,
@@ -71,12 +73,12 @@ typedef enum {
     SMU_Return_RWError           = 0xF5,
     // Driver version is incompatible.
     SMU_Return_DriverVersion     = 0xF4,
-} smu_return_val;
+};
 
 /**
  * Supported processor codenames with SMU capabilities.
  */
-typedef enum {
+enum smu_processor_codename{
     CODENAME_UNDEFINED,
     CODENAME_COLFAX,
     CODENAME_RENOIR,
@@ -98,38 +100,40 @@ typedef enum {
     CODENAME_DALI,
 
     CODENAME_COUNT
-} smu_processor_codename;
+};
 
 /**
  * SMU MP1 Interface Version [v9-v13]
  */
-typedef enum {
+enum smu_if_version_t
+{
     IF_VERSION_9,
     IF_VERSION_10,
     IF_VERSION_11,
     IF_VERSION_12,
     IF_VERSION_13,
-
     IF_VERSION_COUNT
-} smu_if_version;
+} ;
 
 /**
  * Mutex lock enumeration for specific components.
  */
-enum SMU_MUTEX_LOCK {
+enum SMU_MUTEX_LOCK
+{
     SMU_MUTEX_SMN,
     SMU_MUTEX_CMD,
     SMU_MUTEX_PM,
     SMU_MUTEX_COUNT
 };
 
-typedef struct {
+struct smu_obj_t
+{
     /* Accessible To Users */
     int                         init;
     int                         driver_version;
 
     smu_processor_codename      codename;
-    smu_if_version              smu_if_version;
+    smu_if_version_t             smu_if_version;
     int                         smu_version;
     int                         pm_table_size;
     int                         pm_table_version;
@@ -142,9 +146,10 @@ typedef struct {
     int                         fd_pm_table;
 
     pthread_mutex_t             lock[SMU_MUTEX_COUNT];
-} smu_obj_t;
+};
 
-typedef union {
+union smu_arg_t
+{
     struct {
         float                   args0_f;
         float                   args1_f;
@@ -164,7 +169,7 @@ typedef union {
 
     unsigned int                args[6];
     float                       args_f[6];
-} smu_arg_t;
+};
 
 /**
  * Initializes or frees the userspace library for use.
@@ -174,7 +179,7 @@ typedef union {
  *
  * Returns SMU_Return_OK on success.
  */
-int smu_init(smu_obj_t* obj);
+smu_return_val smu_init(smu_obj_t* obj);
 void smu_free(smu_obj_t* obj);
 
 /**
