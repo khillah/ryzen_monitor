@@ -34,6 +34,7 @@ Then pull and make **ryzen_monitor**:
 git clone https://github.com/hattedsquirrel/ryzen_monitor.git
 cd ryzen_monitor/
 mkdir build && pushd build
+cmake ..
 make -j
 popd
 
