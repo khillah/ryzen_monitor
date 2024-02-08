@@ -257,13 +257,12 @@ unsigned int smu_read_smn_addr(smu_obj_t* obj, unsigned int address, unsigned in
     lseek(obj->fd_smn, 0, SEEK_SET);
     ret = write(obj->fd_smn, &address, sizeof(address));
 
-    if (ret != sizeof(address))
-        goto BREAK_OUT;
+    if (ret == sizeof(address))
+    {
+        lseek(obj->fd_smn, 0, SEEK_SET);
+        ret = read(obj->fd_smn, result, sizeof(*result));
+    }
 
-    lseek(obj->fd_smn, 0, SEEK_SET);
-    ret = read(obj->fd_smn, result, sizeof(*result));
-
-BREAK_OUT:
     pthread_mutex_unlock(&obj->lock[SMU_MUTEX_SMN]);
 
     return ret == sizeof(unsigned int) ? SMU_Return_OK : SMU_Return_RWError;
@@ -287,7 +286,8 @@ smu_return_val smu_write_smn_addr(smu_obj_t* obj, unsigned int address, unsigned
 
 smu_return_val smu_send_command(smu_obj_t* obj, unsigned int op, smu_arg_t args,
     enum smu_mailbox mailbox) {
-    unsigned int ret, status, fd_smu_cmd;
+    unsigned int val, status, fd_smu_cmd;
+    smu_return_val ret;
 
     switch (mailbox) {
         case TYPE_RSMU:
@@ -307,38 +307,26 @@ smu_return_val smu_send_command(smu_obj_t* obj, unsigned int op, smu_arg_t args,
     pthread_mutex_lock(&obj->lock[SMU_MUTEX_CMD]);
 
     lseek(obj->fd_smu_args, 0, SEEK_SET);
-    ret = write(obj->fd_smu_args, args.args, sizeof(args));
-
-    if (ret != sizeof(args)) {
-        ret = SMU_Return_RWError;
-        goto BREAK_OUT;
+    val = write(obj->fd_smu_args, args.args, sizeof(args));
+    ret = SMU_Return_RWError;
+    if (val == sizeof(args))
+    {
+        lseek(fd_smu_cmd, 0, SEEK_SET);
+        val = write(fd_smu_cmd, &op, sizeof(op));
+        if (val == sizeof(op))
+        {
+            lseek(fd_smu_cmd, 0, SEEK_SET);
+            val = read(fd_smu_cmd, &status, sizeof(status));
+            if (val == 1)
+            {
+                lseek(obj->fd_smu_args, 0, SEEK_SET);
+                val = read(obj->fd_smu_args, args.args, sizeof(args.args));
+                if (val == sizeof(args.args))
+                    ret = SMU_Return_OK;
+            }
+        }
     }
 
-    lseek(fd_smu_cmd, 0, SEEK_SET);
-    ret = write(fd_smu_cmd, &op, sizeof(op));
-
-    if (ret != sizeof(op)) {
-        ret = SMU_Return_RWError;
-        goto BREAK_OUT;
-    }
-
-    lseek(fd_smu_cmd, 0, SEEK_SET);
-    ret = read(fd_smu_cmd, &status, sizeof(status));
-
-    if (ret != sizeof(status))
-        ret = SMU_Return_RWError;
-    else
-        ret = status;
-
-    if (ret == SMU_Return_OK) {
-        lseek(obj->fd_smu_args, 0, SEEK_SET);
-        ret = read(obj->fd_smu_args, args.args, sizeof(args.args));
-
-        if (ret != sizeof(args.args))
-            ret = SMU_Return_RWError;
-    }
-
-BREAK_OUT:
     pthread_mutex_unlock(&obj->lock[SMU_MUTEX_CMD]);
 
     return static_cast<smu_return_val>(ret);
